@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Anoma • Intent Flow Visualizer (English UI)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{
+    --ink:#0f172a; --muted:#6b7280; --bg:#f1f5f9; --card:#ffffff;
+    --line:#cbd5e1; --active:#2563eb; --ok:#16a34a; --warn:#d97706; --err:#ef4444;
+  }
+  *{box-sizing:border-box} html,body{height:100%}
+  body{margin:0;font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial;background:linear-gradient(180deg,#eef2ff,#e2e8f0);color:var(--ink)}
+  header{position:sticky;top:0;z-index:10;background:#ffffffcc;backdrop-filter:blur(6px);border-bottom:1px solid #e5e7eb}
+  .wrap{max-width:1100px;margin:0 auto;padding:14px 16px}
+  .title{font-weight:800;letter-spacing:-.02em}
+  .grid{display:grid;grid-template-columns:320px 1fr;gap:16px;margin:18px auto}
+  @media (max-width:980px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 3px 8px rgba(15,23,42,.06)}
+  .pane{padding:16px}
+  .label{font-size:.9rem;color:var(--muted);margin-bottom:4px}
+  input,select,textarea{width:100%;padding:.65rem .8rem;border:1px solid #d1d5db;border-radius:10px;font:inherit}
+  .row{display:flex;gap:10px;align-items:center}
+  .btn{padding:.55rem .9rem;border-radius:10px;border:1px solid #0f172a;background:#0f172a;color:#fff;cursor:pointer}
+  .btn:disabled{opacity:.6;cursor:not-allowed}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .chip{font-size:.85rem;padding:.35rem .6rem;border:1px solid #cbd5e1;border-radius:999px;cursor:pointer;background:#fff}
+  .muted{color:var(--muted)}
+  .legend{display:flex;gap:12px;align-items:center;font-size:.9rem;color:var(--muted)}
+  .dot{width:10px;height:10px;border-radius:50%}
+  .d-inactive{background:#cbd5e1}.d-active{background:var(--active)}.d-done{background:var(--ok)}
+  /* canvas */
+  .vis{position:relative;min-height:540px;padding:18px}
+  .lane{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:22px}
+  .node{position:relative;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:10px;min-height:74px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
+  .node .icon{font-size:20px;margin-bottom:6px}
+  .node .cap{font-size:.8rem;color:var(--muted)}
+  .node.active{outline:2px solid var(--active);box-shadow:0 0 0 4px rgba(37,99,235,.12)}
+  .node.done{outline:2px solid var(--ok);box-shadow:0 0 0 4px rgba(22,163,74,.12)}
+  .node.warn{outline:2px solid var(--warn)}
+  .bad{outline:2px solid var(--err)}
+  .mini{font-size:.75rem;margin-top:4px;color:var(--muted)}
+  /* connectors (SVG) */
+  svg.wire{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  .wire-line{stroke:var(--line);stroke-width:2;fill:none;stroke-linecap:round}
+  .wire-line.active{stroke:var(--active)}
+  .wire-line.done{stroke:var(--ok)}
+  .steps{padding:10px 14px;border-top:1px dashed #e5e7eb}
+  .step{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px dashed #eef2f7}
+  .step:last-child{border-bottom:none}
+  .step .s-badge{width:18px;height:18px;border-radius:50%;background:#cbd5e1;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:11px}
+  .step.active .s-badge{background:var(--active)}
+  .step.done .s-badge{background:var(--ok)}
+  .code{background:#0b1020;color:#c7d2fe;font-family:ui-monospace,Consolas,Menlo,monospace;border-radius:10px;padding:10px;overflow:auto;font-size:.85rem}
+  .foot{padding:16px;text-align:center;color:var(--muted);font-size:.85rem}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap row" style="justify-content:space-between">
+    <div class="title">Anoma • Intent Flow Visualizer</div>
+    <div class="legend">
+      <span class="row"><span class="dot d-inactive"></span>idle</span>
+      <span class="row"><span class="dot d-active"></span>processing</span>
+      <span class="row"><span class="dot d-done"></span>done</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap grid">
+  <!-- LEFT: controls -->
+  <section class="card pane">
+    <div class="label">Write your intent (see examples below):</div>
+    <textarea id="intent" rows="3" placeholder="e.g. I want to deliver a private message to my friend."></textarea>
+    <div class="row" style="margin-top:10px">
+      <div style="flex:1">
+        <div class="label">Domain</div>
+        <select id="domain">
+          <option value="local:coord">local:coord (coordination)</option>
+          <option value="local:msg">local:msg (messaging)</option>
+          <option value="local:pay">local:pay (payments)</option>
+          <option value="">(auto)</option>
+        </select>
+      </div>
+      <div>
+        <div class="label">Privacy</div>
+        <label class="row"><input id="shield" type="checkbox" checked> <span class="muted">Shielded / ZK</span></label>
+      </div>
+    </div>
+
+    <div class="chips">
+      <span class="chip" data-ex="I want to deliver a private message to my friend">private message</span>
+      <span class="chip" data-ex="I want to distribute tasks for a neighborhood event">distribute tasks</span>
+      <span class="chip" data-ex="I want to make a private donation to a charity">private donation</span>
+      <span class="chip" data-ex="I want to publish a conditional announcement to different groups">conditional announcement</span>
+    </div>
+
+    <div class="row" style="margin-top:12px">
+      <button id="run" class="btn">Plan & Simulate</button>
+      <button id="reset" class="btn" style="background:#fff;color:var(--ink)">Reset</button>
+    </div>
+
+    <div style="margin-top:12px">
+      <div class="label">Intent (structured object)</div>
+      <pre id="intentObj" class="code" style="max-height:200px"></pre>
+    </div>
+  </section>
+
+  <!-- RIGHT: visualization -->
+  <section class="card">
+    <div class="pane vis" id="vis">
+      <!-- Lanes -->
+      <div class="lane" id="lane1">
+        <div class="node" id="n_user"><div class="icon">👤</div><div>User</div><div class="cap">Intent</div></div>
+        <div class="node" id="n_parse"><div class="icon">🧠</div><div>Intent Parser</div><div class="cap">Goal & constraints</div></div>
+      </div>
+
+      <div class="lane" id="lane2">
+        <div class="node" id="n_domA"><div class="icon">🛰️</div><div>Domain: coord</div><div class="cap">local:coord</div></div>
+        <div class="node" id="n_domB"><div class="icon">💬</div><div>Domain: msg</div><div class="cap">local:msg</div></div>
+        <div class="node" id="n_domC"><div class="icon">💠</div><div>Domain: pay</div><div class="cap">local:pay</div></div>
+      </div>
+
+      <div class="lane" id="lane3">
+        <div class="node" id="n_s1"><div class="icon">🔎</div><div>Solver A</div><div class="cap">low-latency</div></div>
+        <div class="node" id="n_s2"><div class="icon">🧭</div><div>Solver B</div><div class="cap">privacy-biased</div></div>
+        <div class="node" id="n_s3"><div class="icon">🧮</div><div>Solver C</div><div class="cap">cost-aware</div></div>
+      </div>
+
+      <div class="lane" id="lane4">
+        <div class="node" id="n_shield"><div class="icon">🛡️</div><div>Shielded / ZK</div><div class="cap">produce proof</div></div>
+        <div class="node" id="n_ctrl"><div class="icon">🧩</div><div>Controllers</div><div class="cap">policy/limits</div></div>
+      </div>
+
+      <div class="lane" id="lane5">
+        <div class="node" id="n_exec"><div class="icon">⚙️</div><div>Adapter</div><div class="cap">settlement/cross</div></div>
+        <div class="node" id="n_done"><div class="icon">✅</div><div>Completed</div><div class="cap">result</div></div>
+      </div>
+
+      <!-- wires -->
+      <svg class="wire" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <path id="w1" class="wire-line" d="M10,18 L40,18"/>
+        <path id="w2" class="wire-line" d="M40,18 L15,40"/>
+        <path id="w3" class="wire-line" d="M40,18 L40,40"/>
+        <path id="w4" class="wire-line" d="M40,18 L65,40"/>
+        <path id="w5" class="wire-line" d="M40,40 L20,62"/>
+        <path id="w6" class="wire-line" d="M40,40 L40,62"/>
+        <path id="w7" class="wire-line" d="M40,40 L60,62"/>
+        <path id="w8" class="wire-line" d="M20,62 L20,80"/>
+        <path id="w9" class="wire-line" d="M40,62 L40,80"/>
+        <path id="w10" class="wire-line" d="M20,80 L35,80"/>
+        <path id="w11" class="wire-line" d="M40,80 L60,80"/>
+      </svg>
+    </div>
+
+    <div class="steps" id="steps"></div>
+  </section>
+</main>
+
+<div class="foot">This is an off-chain visualization; it does not execute transactions. It illustrates Anoma’s “intent → discovery → solver → privacy/controllers → settlement” flow.</div>
+
+<script>
+  const $ = s => document.querySelector(s);
+  const $$ = s => Array.from(document.querySelectorAll(s));
+  const sleep = ms => new Promise(r=>setTimeout(r,ms));
+
+  const nodes = ["#n_user","#n_parse","#n_domA","#n_domB","#n_domC","#n_s1","#n_s2","#n_s3","#n_shield","#n_ctrl","#n_exec","#n_done"];
+  const wires = ["#w1","#w2","#w3","#w4","#w5","#w6","#w7","#w8","#w9","#w10","#w11"];
+
+  function clearClasses(){
+    [...nodes.map($), ...wires.map($)].forEach(e=> e && e.classList.remove("active","done","warn","bad"));
+    $("#steps").innerHTML = "";
+  }
+  function mark(sel,cls){ const el=$(sel); if(el) el.classList.add(cls); }
+  function unmark(sel,cls){ const el=$(sel); if(el) el.classList.remove(cls); }
+  function addStep(text, key){ const li=document.createElement("div"); li.className="step"; li.id=key; li.innerHTML=`<span class="s-badge">•</span><span>${text}</span>`; $("#steps").appendChild(li); }
+  function stepActive(key){ const el=$("#"+key); if(el){ el.classList.add("active"); } }
+  function stepDone(key){ const el=$("#"+key); if(el){ el.classList.remove("active"); el.classList.add("done"); } }
+
+  // Lightweight classifier (supports EN + TR keywords)
+  function classify(text, domainSel, shielded){
+    const t = (text||"").toLowerCase();
+    let domain = domainSel || "";
+    if(!domain){
+      if(/message|dm|private msg|gizli mesaj/.test(t)) domain = "local:msg";
+      else if(/task|organize|event|coord|görev|etkinlik/.test(t)) domain = "local:coord";
+      else if(/donat|donation|pay|tip|bağış|ödeme/.test(t)) domain = "local:pay";
+      else domain = "local:coord";
+    }
+    const tags=[];
+    if(/private|anon|gizli/.test(t)) tags.push("privacy");
+    if(/conditional|only if|koşul|şart/.test(t)) tags.push("conditional");
+    return {
+      owner:"user:demo",
+      domain,
+      privacy: !!shielded || /private|gizli/.test(t),
+      objective: t.slice(0,140),
+      controllers: ["rate_limit_ok","policy_ok"],
+      constraints: tags
+    };
+  }
+
+  function showIntentObj(obj){
+    $("#intentObj").textContent = JSON.stringify(obj,null,2);
+  }
+
+  async function run(){
+    const btn=$("#run"); btn.disabled=true;
+    clearClasses();
+    const txt = $("#intent").value.trim();
+    const domainSel = $("#domain").value || "";
+    const shielded = $("#shield").checked;
+
+    const intent = classify(txt, domainSel, shielded);
+    showIntentObj(intent);
+
+    // Steps
+    addStep("1) Parse intent (goal & constraints)","s1");
+    addStep("2) Discovery broadcast in domain","s2");
+    addStep("3) Solvers propose & selection","s3");
+    if(intent.privacy) addStep("4) Produce shielded/zk proof","s4");
+    addStep(intent.privacy ? "5) Controllers (policy/limits via zk-meta)" : "4) Controllers (policy/limits)","s5");
+    addStep(intent.privacy ? "6) Settlement / adapters" : "5) Settlement / adapters","s6");
+    addStep(intent.privacy ? "7) Result" : "6) Result","s7");
+
+    // 1) parser
+    stepActive("s1"); mark("#n_user","active"); await sleep(400);
+    mark("#w1","active"); await sleep(200);
+    unmark("#n_user","active"); mark("#n_parse","active"); await sleep(500);
+    stepDone("s1"); unmark("#w1","active"); mark("#w1","done"); mark("#n_parse","done");
+
+    // 2) domain discovery
+    stepActive("s2"); mark("#w2","active"); mark("#w3","active"); mark("#w4","active");
+    await sleep(300);
+    const domMap={ "local:coord":"#n_domA", "local:msg":"#n_domB", "local:pay":"#n_domC" };
+    const dSel = domMap[intent.domain] || "#n_domA";
+    ["#n_domA","#n_domB","#n_domC"].forEach(id=>$(id).classList.toggle("active", id===dSel));
+    await sleep(600);
+    stepDone("s2");
+    ["#w2","#w3","#w4"].forEach(w=>{unmark(w,"active"); mark(w,"done");});
+    ["#n_domA","#n_domB","#n_domC"].forEach(id=>{ if(id===dSel){ mark(id,"done"); } else { unmark(id,"active"); }});
+
+    // 3) solvers
+    stepActive("s3");
+    ["#w5","#w6","#w7"].forEach(w=>mark(w,"active"));
+    ["#n_s1","#n_s2","#n_s3"].forEach(id=>mark(id,"active"));
+    await sleep(900);
+    const chosen = intent.privacy ? "#n_s2" : "#n_s1";
+    ["#n_s1","#n_s2","#n_s3"].forEach(id=>{ if(id===chosen){ mark(id,"done"); } else { unmark(id,"active"); }});
+    ["#w5","#w6","#w7"].forEach(w=>{unmark(w,"active"); mark(w,"done");});
+    stepDone("s3");
+
+    // 4) shielded / zk (optional)
+    if(intent.privacy){
+      stepActive("s4");
+      mark("#n_shield","active"); mark("#w8","active");
+      await sleep(800);
+      unmark("#n_shield","active"); mark("#n_shield","done"); unmark("#w8","active"); mark("#w8","done");
+      stepDone("s4");
+    }
+
+    // 5) controllers
+    stepActive("s5");
+    mark("#n_ctrl","active"); mark("#w9","active");
+    await sleep(700);
+    unmark("#n_ctrl","active"); mark("#n_ctrl","done"); unmark("#w9","active"); mark("#w9","done");
+    stepDone("s5");
+
+    // 6) execution adapter
+    stepActive("s6");
+    mark("#n_exec","active"); mark("#w11","active");
+    await sleep(600);
+    unmark("#n_exec","active"); mark("#n_exec","done"); unmark("#w11","active"); mark("#w11","done");
+    stepDone("s6");
+
+    // 7) done
+    stepActive("s7");
+    mark("#n_done","active"); mark("#w10","active");
+    await sleep(500);
+    unmark("#n_done","active"); mark("#n_done","done"); unmark("#w10","active"); mark("#w10","done");
+    stepDone("s7");
+
+    btn.disabled=false;
+  }
+
+  function resetAll(){
+    $("#intent").value="";
+    $("#domain").value="";
+    $("#shield").checked=true;
+    $("#intentObj").textContent="";
+    clearClasses();
+  }
+
+  $$(".chip").forEach(c=> c.addEventListener("click", ()=> { $("#intent").value = c.dataset.ex; }));
+  $("#run").addEventListener("click", run);
+  $("#reset").addEventListener("click", resetAll);
+
+  clearClasses();
+  $("#intent").value = "I want to deliver a private message to my friend";
+  $("#intentObj").textContent = "";
+</script>
+</body>
+</html>
